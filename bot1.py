@@ -1,15 +1,24 @@
 import os
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+import asyncio
+import logging
 
-# === CONFIGURATION ===
-BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"  # <-- o'z tokeningiz
-WEBHOOK_URL = "https://mytelegrammbottest.onrender.com/webhook"  # <-- domen yoki render URL
-ADMIN_ID = 2051084228
+# Logging sozlamalari
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Flask ilovasini yaratamiz
+app = Flask(__name__)
+
+# Telegram bot tokeni
+BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
+
+# Telegram bot ilovasini yaratamiz
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# REQUIRED_CHANNELS va LINKS ro'yxatlari (o'zgarmagan)
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
     {"name": "2-kanal", "username": "@Matematika_6sinf_yechimi_2022"},
@@ -33,14 +42,9 @@ LINKS = {
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
 
-# === FLASK APP ===
-app = Flask(__name__)
+ADMIN_ID = 2051084228
 
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-
-# === HELPER FUNCTIONS ===
-
+# Obuna holatini tekshirish
 async def check_subscription_status(context, user_id):
     not_subscribed = []
     for channel in REQUIRED_CHANNELS:
@@ -52,13 +56,11 @@ async def check_subscription_status(context, user_id):
             not_subscribed.append(channel["name"])
     return not_subscribed
 
-
-# === HANDLERS ===
-
+# /start buyrug'i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Foydalanuvchini users.txt faylga yozish
+    # Foydalanuvchini users.txt faylga yozamiz
     try:
         with open("users.txt", "r") as f:
             users = f.read().splitlines()
@@ -90,7 +92,7 @@ Botdan foydalanish uchun kanalga obuna boʻling va tekshirish tugmasini bosing �
     reply_markup = InlineKeyboardMarkup(subscribe_buttons)
     await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
-
+# Obuna tekshiruvi
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -117,7 +119,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(msg)
         await send_main_menu(query, context)
 
-
+# Asosiy menyu
 async def send_main_menu(update_or_query, context):
     buttons = [
         [InlineKeyboardButton("BSB JAVOBLARI ☑️", callback_data="bsb")],
@@ -131,10 +133,10 @@ async def send_main_menu(update_or_query, context):
     else:
         await update_or_query.edit_message_text("Asosiy menyu:", reply_markup=markup)
 
-
+# Sub-menyu (BSB yoki CHSB)
 async def send_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data = query.data  # "bsb" yoki "chsb"
+    data = query.data
 
     buttons = []
     for grade in range(5, 12):
@@ -151,7 +153,7 @@ async def send_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup = InlineKeyboardMarkup(buttons)
     await query.edit_message_text(f"{data.upper()} menyusi:", reply_markup=markup)
 
-
+# Sinf tanlash
 async def handle_grade_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -169,18 +171,18 @@ async def handle_grade_selection(update: Update, context: ContextTypes.DEFAULT_T
             f"Siz tanladingiz: {data.upper()}\nKechirasiz, havola topilmadi."
         )
 
-
+# Asosiy menyuga qaytish
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await send_main_menu(query, context)
 
-
+# Reklama xizmati
 async def reklama_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
 
-
+# Statistika
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -195,8 +197,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"Botni ishlatgan foydalanuvchilar soni: {len(users)}")
 
-
-# === HANDLERLARNI QO‘SHISH ===
+# Handlerlarni qo'shish
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("stats", stats))
 telegram_app.add_handler(CallbackQueryHandler(check_subscription, pattern="check_subs"))
@@ -205,23 +206,32 @@ telegram_app.add_handler(CallbackQueryHandler(handle_grade_selection, pattern="^
 telegram_app.add_handler(CallbackQueryHandler(main_menu, pattern="main_menu"))
 telegram_app.add_handler(CallbackQueryHandler(reklama_handler, pattern="reklama"))
 
-
-# === FLASK ROUTES ===
-
-@app.route("/webhook", methods=["POST"])
+# Flask webhook endpoint
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
 async def webhook():
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    if update:
         await telegram_app.process_update(update)
-        return "ok", 200
+    return jsonify({"status": "ok"})
 
-
-@app.route("/set_webhook", methods=["GET"])
+# Webhookni sozlash
 async def set_webhook():
-    webhook_set = await telegram_app.bot.set_webhook(WEBHOOK_URL)
-    return f"Webhook set: {webhook_set}", 200
+    webhook_url = f"https://bot1-2jv0.onrender.com/{BOT_TOKEN}"  # Render URLingizni kiriting
+    await telegram_app.bot.set_webhook(url=webhook_url)
+    logger.info(f"Webhook set to {webhook_url}")
 
+# Flask serverni ishga tushirish
+def main():
+    # Initialize the application
+    asyncio.run(telegram_app.initialize())
+    
+    # Webhookni o'rnatamiz
+    asyncio.run(set_webhook())
+    
+    # Flask serverni ishga tushiramiz
+    port = int(os.environ.get("PORT", 5000))  # Render PORT o'zgaruvchisini oladi
+    logger.info(f"Starting Flask server on port {port}")
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    main()
