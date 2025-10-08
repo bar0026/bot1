@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Bot configuration
 TOKEN = os.getenv("TELEGRAM_TOKEN", "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g")  # Use environment variable
 WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Set this in Render (e.g., https://your-bot.onrender.com)
+WEBHOOK_URL = os.getenv("WEBHOOK_URL","https://bot1-xksf.onrender.com")  # Set this in Render (e.g., https://your-bot.onrender.com)
 PORT = int(os.getenv("PORT", 8443))  # Render assigns PORT dynamically
 
 REQUIRED_CHANNELS = [
@@ -232,3 +232,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
