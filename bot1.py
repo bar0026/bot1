@@ -1,21 +1,21 @@
 import os
+from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-import aiohttp
-from aiohttp import web
-import ssl
+import json
 import logging
 
-# Enable logging
+# Flask app initialization
+app = Flask(__name__)
+
+# Logging for debugging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Bot configuration
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g")  # Use environment variable
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL","https://bot1-xksf.onrender.com")  # Set this in Render (e.g., https://your-bot.onrender.com)
-PORT = int(os.getenv("PORT", 8443))  # Render assigns PORT dynamically
+# Telegram bot token
+BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
 
+# Required channels and links (same as in your original code)
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
     {"name": "2-kanal", "username": "@Matematika_6sinf_yechimi_2022"},
@@ -39,9 +39,12 @@ LINKS = {
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
 
-ADMIN_ID = 2051084228
+ADMIN_ID = 2051084228  # Your Telegram user ID
 
-# Subscription check function
+# Initialize the Telegram bot application
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# Check subscription status
 async def check_subscription_status(context, user_id):
     not_subscribed = []
     for channel in REQUIRED_CHANNELS:
@@ -49,16 +52,15 @@ async def check_subscription_status(context, user_id):
             member = await context.bot.get_chat_member(chat_id=channel["username"], user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
                 not_subscribed.append(channel["name"])
-        except Exception as e:
-            logger.error(f"Error checking subscription for {channel['username']}: {e}")
+        except Exception:
             not_subscribed.append(channel["name"])
     return not_subscribed
 
-# Handlers
+# Start command handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Save user to users.txt
+    # Save user ID to users.txt
     try:
         with open("users.txt", "r") as f:
             users = f.read().splitlines()
@@ -90,6 +92,7 @@ Botdan foydalanish uchun kanalga obuna boʻling va tekshirish tugmasini bosing �
     reply_markup = InlineKeyboardMarkup(subscribe_buttons)
     await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
+# Check subscription handler
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -108,7 +111,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
         subscribe_buttons.append([InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs")])
         reply_markup = InlineKeyboardMarkup(subscribe_buttons)
 
-        await query.answer(text="Siz obuna emassiz", show_alert=True)
+        await query.answer(text="Siz obuna emrossiz", show_alert=True)
         await query.edit_message_text(msg, reply_markup=reply_markup)
     else:
         msg = "✅ Siz barcha kanallarga obuna bo‘lgansiz!\nEndi botdan foydalanishingiz mumkin 🎉"
@@ -116,6 +119,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(msg)
         await send_main_menu(query, context)
 
+# Send main menu
 async def send_main_menu(update_or_query, context):
     buttons = [
         [InlineKeyboardButton("BSB JAVOBLARI ☑️", callback_data="bsb")],
@@ -129,6 +133,7 @@ async def send_main_menu(update_or_query, context):
     else:
         await update_or_query.edit_message_text("Asosiy menyu:", reply_markup=markup)
 
+# Send sub-menu
 async def send_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -148,6 +153,7 @@ async def send_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup = InlineKeyboardMarkup(buttons)
     await query.edit_message_text(f"{data.upper()} menyusi:", reply_markup=markup)
 
+# Handle grade selection
 async def handle_grade_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -165,15 +171,18 @@ async def handle_grade_selection(update: Update, context: ContextTypes.DEFAULT_T
             f"Siz tanladingiz: {data.upper()}\nKechirasiz, havola topilmadi."
         )
 
+# Main menu handler
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await send_main_menu(query, context)
 
+# Reklama handler
 async def reklama_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
 
+# Stats command for admin
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -188,48 +197,46 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"Botni ishlatgan foydalanuvchilar soni: {len(users)}")
 
-# Webhook handler
-async def webhook(request):
-    update = Update.de_json(await request.json(), app.bot)
-    await app.process_update(update)
-    return web.Response(status=200)
+# Add handlers to the Telegram application
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("stats", stats))
+telegram_app.add_handler(CallbackQueryHandler(check_subscription, pattern="check_subs"))
+telegram_app.add_handler(CallbackQueryHandler(send_sub_menu, pattern="^(bsb|chsb)$"))
+telegram_app.add_handler(CallbackQueryHandler(handle_grade_selection, pattern="^(bsb|chsb)_[5-9]|(bsb|chsb)_1[0-1]$"))
+telegram_app.add_handler(CallbackQueryHandler(main_menu, pattern="main_menu"))
+telegram_app.add_handler(CallbackQueryHandler(reklama_handler, pattern="reklama"))
 
-# Set up application and handlers
-app = ApplicationBuilder().token(TOKEN).build()
+# Flask route to handle Telegram webhook updates
+@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
+async def webhook():
+    update = Update.de_json(json.loads(request.get_data(as_text=True)), telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("stats", stats))
-app.add_handler(CallbackQueryHandler(check_subscription, pattern="check_subs"))
-app.add_handler(CallbackQueryHandler(send_sub_menu, pattern="^(bsb|chsb)$"))
-app.add_handler(CallbackQueryHandler(handle_grade_selection, pattern="^(bsb|chsb)_[5-9]|(bsb|chsb)_1[0-1]$"))
-app.add_handler(CallbackQueryHandler(main_menu, pattern="main_menu"))
-app.add_handler(CallbackQueryHandler(reklama_handler, pattern="reklama"))
-
-# Aiohttp server setup
-async def init_aiohttp():
-    web_app = web.Application()
-    web_app.router.add_post(WEBHOOK_PATH, webhook)
-    return web_app
-
+# Flask route to set the webhook (optional, for setup)
+@app.route("/set_webhook", methods=["GET"])
 async def set_webhook():
-    if not WEBHOOK_URL:
-        logger.error("WEBHOOK_URL is not set. Please set the environment variable.")
-        return
-    webhook_url = f"{WEBHOOK_URL}{WEBHOOK_PATH}"
-    await app.bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook set to {webhook_url}")
+    # Replace with your Render or server URL
+    webhook_url = f"https://bot1-abyb.onrender.com/webhook/{BOT_TOKEN}"
+    success = await telegram_app.bot.set_webhook(url=webhook_url)
+    if success:
+        return "Webhook set successfully!", 200
+    else:
+        return "Failed to set webhook", 500
 
+# Root route for health check
+@app.route("/")
+def home():
+    return "Bot is running!", 200
+
+# Main function to initialize and run the Flask app
 def main():
-    import asyncio
+    # Initialize the Telegram application
+    telegram_app.initialize()
 
-    # Initialize application and webhook
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(app.initialize())
-    loop.run_until_complete(set_webhook())
-
-    # Start aiohttp server
-    web.run_app(init_aiohttp(), port=PORT)
+    # Run Flask app
+    port = int(os.environ.get("PORT", 5000))  # Render provides PORT environment variable
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     main()
-
