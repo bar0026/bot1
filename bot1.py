@@ -217,7 +217,7 @@ async def webhook():
 @app.route("/set_webhook", methods=["GET"])
 async def set_webhook():
     # Replace with your Render or server URL
-    webhook_url = f"https://bot1-abyb.onrender.com/webhook/{BOT_TOKEN}"
+    webhook_url = f"https://telegrambot.onrender.com//webhook/{BOT_TOKEN}"
     success = await telegram_app.bot.set_webhook(url=webhook_url)
     if success:
         return "Webhook set successfully!", 200
@@ -240,3 +240,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
