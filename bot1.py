@@ -65,6 +65,36 @@ def check_subscription_status(user_id):
     return not_subscribed
 
 
+# Kanal obunasi uchun INLINE tugma (qoladi)
+def subscription_buttons(not_subscribed=None):
+    markup = types.InlineKeyboardMarkup()
+    channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
+    for channel in channels:
+        markup.add(types.InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}"))
+    markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
+    return markup
+
+
+# Yangi funksiya: foydalanuvchi obunasini tekshiradi va agar to'liq emas bo'lsa, habar yuboradi va keyingi amalni to'xtatadi
+def check_user_subscriptions(message_or_call):
+    user_id = message_or_call.from_user.id
+    chat_id = message_or_call.message.chat.id if hasattr(message_or_call, "message") else message_or_call.chat.id
+
+    not_subscribed = check_subscription_status(user_id)
+    if not_subscribed:
+        msg = "❌ Siz quyidagi kanallarga obuna bo‘lmagansiz:\n"
+        msg += "\n".join(f"• {name}" for name in not_subscribed)
+        msg += "\n\nIltimos, obuna bo‘ling va keyin tekshirib ko‘ring."
+        markup = subscription_buttons(not_subscribed)
+        if hasattr(message_or_call, "message"):  # callback_query
+            bot.answer_callback_query(message_or_call.id, "Obuna bo'lish kerak", show_alert=True)
+            bot.edit_message_text(chat_id=chat_id, message_id=message_or_call.message.message_id, text=msg, reply_markup=markup)
+        else:  # oddiy message
+            bot.send_message(chat_id, msg, reply_markup=markup)
+        return False
+    return True
+
+
 # Asosiy menyu tugmalari
 def main_menu_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -87,16 +117,6 @@ def sub_menu_markup(data):
             row_buttons.append(types.KeyboardButton(text))
         markup.row(*row_buttons)
     markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
-    return markup
-
-
-# Kanal obunasi uchun INLINE tugma (qoladi)
-def subscription_buttons(not_subscribed=None):
-    markup = types.InlineKeyboardMarkup()
-    channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
-    for channel in channels:
-        markup.add(types.InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}"))
-    markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
     return markup
 
 
@@ -144,6 +164,8 @@ def check_subscriptions(call):
 # BSB menyu tugmasi
 @bot.message_handler(func=lambda message: message.text == "📚 BSB JAVOBLARI")
 def bsb_menu(message):
+    if not check_user_subscriptions(message):
+        return
     markup = sub_menu_markup("bsb")
     bot.send_message(message.chat.id, "BSB sinflarni tanlang:", reply_markup=markup)
 
@@ -151,6 +173,8 @@ def bsb_menu(message):
 # CHSB menyu tugmasi
 @bot.message_handler(func=lambda message: message.text == "❗️ CHSB JAVOBLARI")
 def chsb_menu(message):
+    if not check_user_subscriptions(message):
+        return
     markup = sub_menu_markup("chsb")
     bot.send_message(message.chat.id, "CHSB sinflarni tanlang:", reply_markup=markup)
 
@@ -158,18 +182,24 @@ def chsb_menu(message):
 # Reklama tugmasi
 @bot.message_handler(func=lambda message: message.text == "📬 Reklama xizmati")
 def reklama_menu(message):
+    if not check_user_subscriptions(message):
+        return
     bot.send_message(message.chat.id, "📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
 
 
 # Asosiy menyuga qaytish
 @bot.message_handler(func=lambda message: message.text == "🏠 Asosiy menyu")
 def return_main_menu(message):
+    if not check_user_subscriptions(message):
+        return
     bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
 
 
 # Sinf tanlaganda link yuborish
 @bot.message_handler(func=lambda message: any(x in message.text for x in ["BSB", "CHSB"]))
 def grade_link_handler(message):
+    if not check_user_subscriptions(message):
+        return
     try:
         parts = message.text.split()
         grade = parts[0].replace("-sinf", "")
@@ -230,4 +260,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
