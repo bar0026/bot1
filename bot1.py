@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
+BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"  # <-- E'TIBOR BERING: bu yerda tokenni yangilang
 bot = telebot.TeleBot(BOT_TOKEN)
 
 REQUIRED_CHANNELS = [
@@ -38,6 +38,7 @@ LINKS = {
 
 ADMIN_ID = 2051084228
 
+# Foydalanuvchini saqlash
 def save_user(user_id):
     try:
         with open("users.txt", "r") as f:
@@ -50,6 +51,8 @@ def save_user(user_id):
         with open("users.txt", "w") as f:
             f.write("\n".join(users))
 
+
+# Obuna holatini tekshirish
 def check_subscription_status(user_id):
     not_subscribed = []
     for channel in REQUIRED_CHANNELS:
@@ -61,13 +64,29 @@ def check_subscription_status(user_id):
             not_subscribed.append(channel["name"])
     return not_subscribed
 
+
+# Asosiy menyu tugmalari
 def main_menu_markup():
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("BSB JAVOBLARI ☑️", callback_data="bsb"))
-    markup.add(types.InlineKeyboardButton("CHSB JAVOBLARI ❗️", callback_data="chsb"))
-    markup.add(types.InlineKeyboardButton("Reklama xizmati 📬", callback_data="reklama"))
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(
+        types.KeyboardButton("📚 BSB JAVOBLARI"),
+        types.KeyboardButton("❗️ CHSB JAVOBLARI"),
+        types.KeyboardButton("📬 Reklama xizmati")
+    )
     return markup
 
+
+# BSB yoki CHSB sinflar uchun menyu
+def sub_menu_markup(data):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    for grade in range(5, 12):
+        text = f"{grade}-sinf BSB" if data == "bsb" else f"{grade}-sinf CHSB"
+        markup.add(types.KeyboardButton(text))
+    markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
+    return markup
+
+
+# Kanal obunasi uchun INLINE tugma (qoladi)
 def subscription_buttons(not_subscribed=None):
     markup = types.InlineKeyboardMarkup()
     channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
@@ -76,19 +95,8 @@ def subscription_buttons(not_subscribed=None):
     markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
     return markup
 
-def sub_menu_markup(data):
-    markup = types.InlineKeyboardMarkup()
-    for grade in range(5, 12):
-        if data == "bsb":
-            text = f"{grade}-sinf bsb javoblari 📚"
-            callback_data = f"bsb_{grade}"
-        else:
-            text = f"{grade}-sinf chsb javoblari ❇️"
-            callback_data = f"chsb_{grade}"
-        markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
-    markup.add(types.InlineKeyboardButton("🏠 Asosiy menyuga qaytish", callback_data="main_menu"))
-    return markup
 
+# /start komandasi
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     user_id = message.from_user.id
@@ -108,6 +116,8 @@ Botdan foydalanish uchun kanalga obuna boʻling va tekshirish tugmasini bosing �
     markup = subscription_buttons()
     bot.send_message(chat_id=message.chat.id, text=welcome_text, reply_markup=markup)
 
+
+# Obunani tekshirish tugmasi
 @bot.callback_query_handler(func=lambda call: call.data == "check_subs")
 def check_subscriptions(call):
     user_id = call.from_user.id
@@ -124,33 +134,55 @@ def check_subscriptions(call):
         msg = "✅ Siz barcha kanallarga obuna bo‘lgansiz!\nEndi botdan foydalanishingiz mumkin 🎉"
         bot.answer_callback_query(call.id)
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=msg)
-        # Keyingi menyu
         bot.send_message(chat_id=call.message.chat.id, text="Asosiy menyu:", reply_markup=main_menu_markup())
 
-@bot.callback_query_handler(func=lambda call: call.data in ["bsb", "chsb"])
-def sub_menu_handler(call):
-    markup = sub_menu_markup(call.data)
-    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"{call.data.upper()} menyusi:", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("bsb_") or call.data.startswith("chsb_"))
-def grade_selection_handler(call):
-    link = LINKS.get(call.data)
-    if link:
-        text = f"Siz tanladingiz: {call.data.upper()}\nMana siz uchun havola:\n{link}"
-    else:
-        text = f"Siz tanladingiz: {call.data.upper()}\nKechirasiz, havola topilmadi."
-    bot.answer_callback_query(call.id)
-    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text)
+# BSB menyu tugmasi
+@bot.message_handler(func=lambda message: message.text == "📚 BSB JAVOBLARI")
+def bsb_menu(message):
+    markup = sub_menu_markup("bsb")
+    bot.send_message(message.chat.id, "BSB sinflarni tanlang:", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
-def main_menu_handler(call):
-    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Asosiy menyu:", reply_markup=main_menu_markup())
 
-@bot.callback_query_handler(func=lambda call: call.data == "reklama")
-def reklama_handler(call):
-    bot.answer_callback_query(call.id)
-    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
+# CHSB menyu tugmasi
+@bot.message_handler(func=lambda message: message.text == "❗️ CHSB JAVOBLARI")
+def chsb_menu(message):
+    markup = sub_menu_markup("chsb")
+    bot.send_message(message.chat.id, "CHSB sinflarni tanlang:", reply_markup=markup)
 
+
+# Reklama tugmasi
+@bot.message_handler(func=lambda message: message.text == "📬 Reklama xizmati")
+def reklama_menu(message):
+    bot.send_message(message.chat.id, "📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
+
+
+# Asosiy menyuga qaytish
+@bot.message_handler(func=lambda message: message.text == "🏠 Asosiy menyu")
+def return_main_menu(message):
+    bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
+
+
+# Sinf tanlaganda link yuborish
+@bot.message_handler(func=lambda message: any(x in message.text for x in ["BSB", "CHSB"]))
+def grade_link_handler(message):
+    try:
+        parts = message.text.split()
+        grade = parts[0].replace("-sinf", "")
+        typ = "bsb" if "BSB" in message.text else "chsb"
+        key = f"{typ}_{grade}"
+        link = LINKS.get(key)
+
+        if link:
+            bot.send_message(message.chat.id, f"Siz tanladingiz: {message.text}\nHavola: {link}")
+        else:
+            bot.send_message(message.chat.id, "Kechirasiz, ushbu sinf uchun havola topilmadi.")
+    except Exception as e:
+        logger.error(f"Xatolik: {e}")
+        bot.send_message(message.chat.id, "Xatolik yuz berdi.")
+
+
+# /stats komandasi (admin uchun)
 @bot.message_handler(commands=['stats'])
 def stats_handler(message):
     if message.from_user.id != ADMIN_ID:
@@ -163,6 +195,8 @@ def stats_handler(message):
         users = []
     bot.send_message(message.chat.id, f"Botni ishlatgan foydalanuvchilar soni: {len(users)}")
 
+
+# Webhook uchun
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     json_str = request.get_data().decode("utf-8")
@@ -170,8 +204,10 @@ def webhook():
     bot.process_new_updates([update])
     return jsonify({"status": "ok"})
 
+
+# Webhook sozlash
 def set_webhook():
-    webhook_url = f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}"  # O'zingizning URLingiz
+    webhook_url = f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}"  # <-- Bu yerda domeningizni yozing
     bot.remove_webhook()
     result = bot.set_webhook(url=webhook_url)
     if result:
@@ -179,12 +215,14 @@ def set_webhook():
     else:
         logger.error("Webhook set failed")
 
+
+# Flask serverni ishga tushirish
 def main():
     set_webhook()
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Flask server on port {port}")
     app.run(host="0.0.0.0", port=port)
 
+
 if __name__ == "__main__":
     main()
-
