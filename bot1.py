@@ -76,12 +76,16 @@ def main_menu_markup():
     return markup
 
 
-# BSB yoki CHSB sinflar uchun menyu
 def sub_menu_markup(data):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    for grade in range(5, 12):
-        text = f"{grade}-sinf BSB" if data == "bsb" else f"{grade}-sinf CHSB"
-        markup.add(types.KeyboardButton(text))
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    grades = list(range(5, 12))
+    # Tugmalarni juftlab joylashtirish
+    for i in range(0, len(grades), 2):
+        row_buttons = []
+        for grade in grades[i:i+2]:
+            text = f"{grade}-sinf BSB" if data == "bsb" else f"{grade}-sinf CHSB"
+            row_buttons.append(types.KeyboardButton(text))
+        markup.row(*row_buttons)
     markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
     return markup
 
@@ -226,3 +230,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
