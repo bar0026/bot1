@@ -1,24 +1,18 @@
 import os
 from flask import Flask, request, jsonify
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-import asyncio
+import telebot
+from telebot import types
 import logging
 
 # Logging sozlamalari
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask ilovasini yaratamiz
 app = Flask(__name__)
 
-# Telegram bot tokeni
 BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# Telegram bot ilovasini yaratamiz
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-# REQUIRED_CHANNELS va LINKS ro'yxatlari (o'zgarmagan)
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
     {"name": "2-kanal", "username": "@Matematika_6sinf_yechimi_2022"},
@@ -44,23 +38,7 @@ LINKS = {
 
 ADMIN_ID = 2051084228
 
-# Obuna holatini tekshirish
-async def check_subscription_status(context, user_id):
-    not_subscribed = []
-    for channel in REQUIRED_CHANNELS:
-        try:
-            member = await context.bot.get_chat_member(chat_id=channel["username"], user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                not_subscribed.append(channel["name"])
-        except Exception:
-            not_subscribed.append(channel["name"])
-    return not_subscribed
-
-# /start buyrug'i
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    # Foydalanuvchini users.txt faylga yozamiz
+def save_user(user_id):
     try:
         with open("users.txt", "r") as f:
             users = f.read().splitlines()
@@ -72,8 +50,52 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open("users.txt", "w") as f:
             f.write("\n".join(users))
 
-    user = update.effective_user.first_name
-    welcome_text = f"""Assalomu alaykum {user} 👋🏻  
+def check_subscription_status(user_id):
+    not_subscribed = []
+    for channel in REQUIRED_CHANNELS:
+        try:
+            member = bot.get_chat_member(chat_id=channel["username"], user_id=user_id)
+            if member.status not in ["member", "administrator", "creator"]:
+                not_subscribed.append(channel["name"])
+        except Exception:
+            not_subscribed.append(channel["name"])
+    return not_subscribed
+
+def main_menu_markup():
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("BSB JAVOBLARI ☑️", callback_data="bsb"))
+    markup.add(types.InlineKeyboardButton("CHSB JAVOBLARI ❗️", callback_data="chsb"))
+    markup.add(types.InlineKeyboardButton("Reklama xizmati 📬", callback_data="reklama"))
+    return markup
+
+def subscription_buttons(not_subscribed=None):
+    markup = types.InlineKeyboardMarkup()
+    channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
+    for channel in channels:
+        markup.add(types.InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}"))
+    markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
+    return markup
+
+def sub_menu_markup(data):
+    markup = types.InlineKeyboardMarkup()
+    for grade in range(5, 12):
+        if data == "bsb":
+            text = f"{grade}-sinf bsb javoblari 📚"
+            callback_data = f"bsb_{grade}"
+        else:
+            text = f"{grade}-sinf chsb javoblari ❇️"
+            callback_data = f"chsb_{grade}"
+        markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
+    markup.add(types.InlineKeyboardButton("🏠 Asosiy menyuga qaytish", callback_data="main_menu"))
+    return markup
+
+@bot.message_handler(commands=['start'])
+def start_handler(message):
+    user_id = message.from_user.id
+    save_user(user_id)
+
+    user_name = message.from_user.first_name
+    welcome_text = f"""Assalomu alaykum {user_name} 👋🏻  
 Botimizga xush kelibsiz 🎊
 
 Bu bot orqali:
@@ -83,153 +105,83 @@ Bu bot orqali:
 
 Botdan foydalanish uchun kanalga obuna boʻling va tekshirish tugmasini bosing ‼️"""
 
-    subscribe_buttons = [
-        [InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}")]
-        for channel in REQUIRED_CHANNELS
-    ]
-    subscribe_buttons.append([InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs")])
+    markup = subscription_buttons()
+    bot.send_message(chat_id=message.chat.id, text=welcome_text, reply_markup=markup)
 
-    reply_markup = InlineKeyboardMarkup(subscribe_buttons)
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
-
-# Obuna tekshiruvi
-async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-
-    not_subscribed = await check_subscription_status(context, user_id)
+@bot.callback_query_handler(func=lambda call: call.data == "check_subs")
+def check_subscriptions(call):
+    user_id = call.from_user.id
+    not_subscribed = check_subscription_status(user_id)
 
     if not_subscribed:
         msg = "❌ Quyidagi kanallarga obuna bo‘lmagansiz:\n"
         msg += "\n".join(f"• {name}" for name in not_subscribed)
         msg += "\n\nIltimos, quyidagi kanallarga obuna bo‘ling va keyin tekshirib ko‘ring."
-
-        subscribe_buttons = [
-            [InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}")]
-            for channel in REQUIRED_CHANNELS if channel['name'] in not_subscribed
-        ]
-        subscribe_buttons.append([InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs")])
-        reply_markup = InlineKeyboardMarkup(subscribe_buttons)
-
-        await query.answer(text="Siz obuna emassiz", show_alert=True)
-        await query.edit_message_text(msg, reply_markup=reply_markup)
+        markup = subscription_buttons(not_subscribed)
+        bot.answer_callback_query(call.id, "Siz obuna emassiz", show_alert=True)
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=msg, reply_markup=markup)
     else:
         msg = "✅ Siz barcha kanallarga obuna bo‘lgansiz!\nEndi botdan foydalanishingiz mumkin 🎉"
-        await query.answer()
-        await query.edit_message_text(msg)
-        await send_main_menu(query, context)
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=msg)
+        # Keyingi menyu
+        bot.send_message(chat_id=call.message.chat.id, text="Asosiy menyu:", reply_markup=main_menu_markup())
 
-# Asosiy menyu
-async def send_main_menu(update_or_query, context):
-    buttons = [
-        [InlineKeyboardButton("BSB JAVOBLARI ☑️", callback_data="bsb")],
-        [InlineKeyboardButton("CHSB JAVOBLARI ❗️", callback_data="chsb")],
-        [InlineKeyboardButton("Reklama xizmati 📬", callback_data="reklama")]
-    ]
-    markup = InlineKeyboardMarkup(buttons)
+@bot.callback_query_handler(func=lambda call: call.data in ["bsb", "chsb"])
+def sub_menu_handler(call):
+    markup = sub_menu_markup(call.data)
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"{call.data.upper()} menyusi:", reply_markup=markup)
 
-    if hasattr(update_or_query, "message") and update_or_query.message:
-        await update_or_query.message.reply_text("Asosiy menyu:", reply_markup=markup)
-    else:
-        await update_or_query.edit_message_text("Asosiy menyu:", reply_markup=markup)
-
-# Sub-menyu (BSB yoki CHSB)
-async def send_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-
-    buttons = []
-    for grade in range(5, 12):
-        if data == "bsb":
-            text = f"{grade}-sinf bsb javoblari 📚"
-            callback_data = f"bsb_{grade}"
-        else:
-            text = f"{grade}-sinf chsb javoblari ❇️"
-            callback_data = f"chsb_{grade}"
-        buttons.append([InlineKeyboardButton(text, callback_data=callback_data)])
-
-    buttons.append([InlineKeyboardButton("🏠 Asosiy menyuga qaytish", callback_data="main_menu")])
-
-    markup = InlineKeyboardMarkup(buttons)
-    await query.edit_message_text(f"{data.upper()} menyusi:", reply_markup=markup)
-
-# Sinf tanlash
-async def handle_grade_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-
-    link = LINKS.get(data)
-
+@bot.callback_query_handler(func=lambda call: call.data.startswith("bsb_") or call.data.startswith("chsb_"))
+def grade_selection_handler(call):
+    link = LINKS.get(call.data)
     if link:
-        await query.answer()
-        await query.edit_message_text(
-            f"Siz tanladingiz: {data.upper()}\nMana siz uchun havola:\n{link}"
-        )
+        text = f"Siz tanladingiz: {call.data.upper()}\nMana siz uchun havola:\n{link}"
     else:
-        await query.answer()
-        await query.edit_message_text(
-            f"Siz tanladingiz: {data.upper()}\nKechirasiz, havola topilmadi."
-        )
+        text = f"Siz tanladingiz: {call.data.upper()}\nKechirasiz, havola topilmadi."
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text)
 
-# Asosiy menyuga qaytish
-async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await send_main_menu(query, context)
+@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
+def main_menu_handler(call):
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Asosiy menyu:", reply_markup=main_menu_markup())
 
-# Reklama xizmati
-async def reklama_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text("📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
+@bot.callback_query_handler(func=lambda call: call.data == "reklama")
+def reklama_handler(call):
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="📬 Reklama uchun admin bilan bog‘laning: @BAR_xn")
 
-# Statistika
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("Sizda bu buyruqni ishlatishga ruxsat yo'q.")
+@bot.message_handler(commands=['stats'])
+def stats_handler(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "Sizda bu buyruqni ishlatishga ruxsat yo'q.")
         return
-
     try:
         with open("users.txt", "r") as f:
             users = f.read().splitlines()
     except FileNotFoundError:
         users = []
+    bot.send_message(message.chat.id, f"Botni ishlatgan foydalanuvchilar soni: {len(users)}")
 
-    await update.message.reply_text(f"Botni ishlatgan foydalanuvchilar soni: {len(users)}")
-
-# Handlerlarni qo'shish
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("stats", stats))
-telegram_app.add_handler(CallbackQueryHandler(check_subscription, pattern="check_subs"))
-telegram_app.add_handler(CallbackQueryHandler(send_sub_menu, pattern="^(bsb|chsb)$"))
-telegram_app.add_handler(CallbackQueryHandler(handle_grade_selection, pattern="^(bsb|chsb)_[5-9]|(bsb|chsb)_1[0-1]$"))
-telegram_app.add_handler(CallbackQueryHandler(main_menu, pattern="main_menu"))
-telegram_app.add_handler(CallbackQueryHandler(reklama_handler, pattern="reklama"))
-
-# Flask webhook endpoint
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-    if update:
-        await telegram_app.process_update(update)
+def webhook():
+    json_str = request.get_data().decode("utf-8")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
     return jsonify({"status": "ok"})
 
-# Webhookni sozlash
-async def set_webhook():
-    webhook_url = f"https://bot1-2jv0.onrender.com/{BOT_TOKEN}"  # Render URLingizni kiriting
-    await telegram_app.bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook set to {webhook_url}")
+def set_webhook():
+    webhook_url = f"https://bot1-2jv0.onrender.com/{BOT_TOKEN}"  # O'zingizning URLingiz
+    bot.remove_webhook()
+    result = bot.set_webhook(url=webhook_url)
+    if result:
+        logger.info(f"Webhook set to {webhook_url}")
+    else:
+        logger.error("Webhook set failed")
 
-# Flask serverni ishga tushirish
 def main():
-    # Initialize the application
-    asyncio.run(telegram_app.initialize())
-    
-    # Webhookni o'rnatamiz
-    asyncio.run(set_webhook())
-    
-    # Flask serverni ishga tushiramiz
-    port = int(os.environ.get("PORT", 5000))  # Render PORT o'zgaruvchisini oladi
+    set_webhook()
+    port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Flask server on port {port}")
     app.run(host="0.0.0.0", port=port)
 
