@@ -14,9 +14,10 @@ BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"  # <-- E'TIBOR BERI
 bot = telebot.TeleBot(BOT_TOKEN)
 
 REQUIRED_CHANNELS = [
-    {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
+    {"name": "1-kanal", "username": "@hamkor_informatiklar"},
     {"name": "2-kanal", "username": "@Matematika_6sinf_yechimi_2022"},
     {"name": "3-kanal", "username": "@algebra_7_sinf_yechimi_2022"},
+    {"name": "4-kanal", "username": "@bsb_chsb_javoblari1"},
 ]
 
 LINKS = {
@@ -260,3 +261,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
