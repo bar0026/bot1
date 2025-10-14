@@ -213,7 +213,7 @@ def webhook():
 
 # --- WEBHOOK O‘RNATISH ---
 def set_webhook():
-    webhook_url = f"https://eightsinfbot.onrender.com/{BOT_TOKEN}"
+    webhook_url = f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}"
     bot.remove_webhook()
     result = bot.set_webhook(url=webhook_url)
     if result:
@@ -232,3 +232,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
