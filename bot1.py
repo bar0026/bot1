@@ -83,7 +83,7 @@ def subscription_buttons(not_subscribed=None):
             url = f"https://t.me/{channel['username'][1:]}"
         else:
             # Maxfiy kanal uchun invite linkni o'zingiz kiriting
-            url = "https://t.me/joinchat/+dwgq6RRtuF9jNzUy"
+            url = "https://t.me/+dwgq6RRtuF9jNzUy"
         markup.add(types.InlineKeyboardButton(channel['name'], url=url))
 
     markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
@@ -265,3 +265,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
