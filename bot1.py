@@ -59,16 +59,16 @@ def save_user(user_id):
 def check_subscription_status(user_id):
     not_subscribed = []
     for channel in REQUIRED_CHANNELS:
+        chat_id_or_username = channel.get("username") or channel.get("id")
         try:
-            chat_id = channel.get("id") or channel.get("username")
-            member = bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-
+            member = bot.get_chat_member(chat_id=chat_id_or_username, user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
                 not_subscribed.append(channel["name"])
         except Exception as e:
-            logger.error(f"Obuna tekshirishda xato ({channel['name']}): {e}")
+            print(f"Xatolik: {e}")
             not_subscribed.append(channel["name"])
     return not_subscribed
+
 
 
 # --- Kanal tugmalari (ochiq + maxfiy) ---
@@ -265,4 +265,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
