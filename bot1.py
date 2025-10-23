@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"  # <-- E'TIBOR BERING: bu yerda tokenni yangilang
+BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"  # <- E'TIBOR BERING: bu yerda tokenni yangilang
 bot = telebot.TeleBot(BOT_TOKEN)
 
 REQUIRED_CHANNELS = [ 
@@ -259,6 +259,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
