@@ -34,7 +34,7 @@ LINKS = {
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
 
-ADMIN_ID = 8193184272
+ADMIN_ID = 2051084228
 
 
 # ------------------------------ FOYDALANUVCHI BAZASI ------------------------------
@@ -306,4 +306,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
