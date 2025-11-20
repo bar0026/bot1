@@ -36,9 +36,7 @@ LINKS = {
 
 ADMIN_ID = 2051084228
 
-
 # ------------------------------ FOYDALANUVCHI BAZASI ------------------------------
-
 def save_user(user_id):
     try:
         with open("users.txt", "r") as f:
@@ -51,9 +49,7 @@ def save_user(user_id):
         with open("users.txt", "w") as f:
             f.write("\n".join(users))
 
-
 # ------------------------------ OBUNA TEKSHIRISH ------------------------------
-
 def check_subscription_status(user_id):
     not_subscribed = []
     for channel in REQUIRED_CHANNELS:
@@ -65,7 +61,6 @@ def check_subscription_status(user_id):
             not_subscribed.append(channel["name"])
     return not_subscribed
 
-
 def subscription_buttons(not_subscribed=None):
     markup = types.InlineKeyboardMarkup()
     channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
@@ -73,7 +68,6 @@ def subscription_buttons(not_subscribed=None):
         markup.add(types.InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}"))
     markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
     return markup
-
 
 def check_user_subscriptions(message_or_call):
     user_id = message_or_call.from_user.id
@@ -93,12 +87,9 @@ def check_user_subscriptions(message_or_call):
         else:
             bot.send_message(chat_id, msg, reply_markup=markup)
         return False
-
     return True
 
-
 # ------------------------------ MENYU TUGMALARI ------------------------------
-
 def main_menu_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
@@ -107,7 +98,6 @@ def main_menu_markup():
         types.KeyboardButton("📬 Reklama xizmati")
     )
     return markup
-
 
 def sub_menu_markup(data):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -121,9 +111,7 @@ def sub_menu_markup(data):
     markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
     return markup
 
-
 # ------------------------------ START ------------------------------
-
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     user_id = message.from_user.id
@@ -136,12 +124,9 @@ BSB & CHSB javoblari, savollar, slaydlar va esselar — hammasi tekin 🎁
 
 Botdan foydalanish uchun kanallarga obuna bo‘ling 👇
 """
-
     bot.send_message(message.chat.id, welcome, reply_markup=subscription_buttons())
 
-
 # ------------------------------ OBUNANI TEKSHIRISH ------------------------------
-
 @bot.callback_query_handler(func=lambda call: call.data == "check_subs")
 def check_subscriptions(call):
     user_id = call.from_user.id
@@ -151,41 +136,34 @@ def check_subscriptions(call):
         msg = "❌ Quyidagi kanallarga obuna bo‘lmagansiz:\n" + "\n".join(f"• {x}" for x in not_sub)
         markup = subscription_buttons(not_sub)
         bot.answer_callback_query(call.id, "Obuna kerak", show_alert=True)
-        bot.edit_message_text(call.message.chat.id, call.message.message_id, msg, reply_markup=markup)
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=msg, reply_markup=markup)
     else:
         bot.answer_callback_query(call.id)
-        bot.edit_message_text(call.message.chat.id, call.message.message_id,
-                              "✅ Obuna tasdiqlandi!\nMenyudan foydalanishingiz mumkin 🎉")
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
+                              text="✅ Obuna tasdiqlandi!\nMenyudan foydalanishingiz mumkin 🎉")
         bot.send_message(call.message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
 
-
 # ------------------------------ BSB / CHSB ------------------------------
-
 @bot.message_handler(func=lambda m: m.text == "📚 BSB JAVOBLARI")
 def bsb_menu(message):
     if not check_user_subscriptions(message): return
     bot.send_message(message.chat.id, "BSB sinfni tanlang:", reply_markup=sub_menu_markup("bsb"))
-
 
 @bot.message_handler(func=lambda m: m.text == "❗️ CHSB JAVOBLARI")
 def chsb_menu(message):
     if not check_user_subscriptions(message): return
     bot.send_message(message.chat.id, "CHSB sinfni tanlang:", reply_markup=sub_menu_markup("chsb"))
 
-
 @bot.message_handler(func=lambda m: m.text == "📬 Reklama xizmati")
 def reklama_menu(message):
     if not check_user_subscriptions(message): return
     bot.send_message(message.chat.id, "📬 Reklama uchun: @BAR_xn")
 
-
 @bot.message_handler(func=lambda m: m.text == "🏠 Asosiy menyu")
 def back_to_menu(message):
     bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
 
-
 # ------------------------------ Sinf linklari ------------------------------
-
 @bot.message_handler(func=lambda m: any(x in m.text for x in ["BSB", "CHSB"]))
 def grade_handler(message):
     if not check_user_subscriptions(message): return
@@ -204,9 +182,7 @@ def grade_handler(message):
         logger.error(e)
         bot.send_message(message.chat.id, "Xatolik yuz berdi.")
 
-
 # ------------------------------ ADMIN PANEL ------------------------------
-
 def admin_panel_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(
@@ -216,18 +192,15 @@ def admin_panel_markup():
     markup.add(types.KeyboardButton("🔙 Orqaga"))
     return markup
 
-
 @bot.message_handler(commands=["admin"])
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         return bot.send_message(message.chat.id, "❌ Siz admin emassiz.")
     bot.send_message(message.chat.id, "🔐 Admin panel:", reply_markup=admin_panel_markup())
 
-
 @bot.message_handler(func=lambda m: m.text == "🔙 Orqaga")
 def back_to_main(message):
     bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
-
 
 @bot.message_handler(func=lambda m: m.text == "📊 Statistika")
 def admin_stats(message):
@@ -239,9 +212,7 @@ def admin_stats(message):
         users = []
     bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {len(users)}")
 
-
 # ------------------------------ BROADCAST ------------------------------
-
 broadcast_mode = {}
 
 @bot.message_handler(func=lambda m: m.text == "📣 Xabar yuborish")
@@ -249,7 +220,6 @@ def start_broadcast(message):
     if message.from_user.id != ADMIN_ID: return
     broadcast_mode[message.from_user.id] = True
     bot.send_message(message.chat.id, "✍️ Yuboriladigan xabarni kiriting.\nMatn, rasm yoki video bo‘lishi mumkin.")
-
 
 @bot.message_handler(content_types=["text", "photo", "video"])
 def broadcast(message):
@@ -280,15 +250,12 @@ def broadcast(message):
         bot.send_message(message.chat.id, f"📣 Yuborildi!\n✔️ {ok} ta\n❌ {fail} ta")
         broadcast_mode[message.from_user.id] = False
 
-
 # ------------------------------ WEBHOOK ------------------------------
-
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
     bot.process_new_updates([update])
     return jsonify({"ok": True})
-
 
 def set_webhook():
     url = f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}"
@@ -296,15 +263,11 @@ def set_webhook():
     bot.set_webhook(url=url)
     logger.info(f"Webhook o‘rnatildi: {url}")
 
-
 def main():
     set_webhook()
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Server {port}-portda ishga tushdi")
     app.run(host="0.0.0.0", port=port)
 
-
 if __name__ == "__main__":
     main()
-
-
