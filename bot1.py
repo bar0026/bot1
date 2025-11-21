@@ -15,6 +15,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
+    {"name": "2-kanal", "username": "@chsb_original"},
 ]
 
 LINKS = {
@@ -271,3 +272,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
