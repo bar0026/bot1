@@ -102,8 +102,8 @@ def sub_buttons():
 # ==================== MENYULAR ====================
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add("BSB JAVOBLARI", "CHSB JAVOBLARI")
-    markup.add("Reklama xizmati")
+    markup.add("📚BSB JAVOBLARI", "❗️CHSB JAVOBLARI")
+    markup.add("📬Reklama xizmati")
     return markup
 
 def grade_menu(typ):
@@ -174,7 +174,7 @@ def send_link(message):
 
 @bot.message_handler(func=lambda m: m.text == "Asosiy menyu")
 def back_main(message):
-    bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu())
+    bot.send_message(message.chat.id, "🏠Asosiy menyu:", reply_markup=main_menu())
 
 @bot.message_handler(func=lambda m: m.text == "Reklama xizmati")
 def reklama(message):
@@ -248,3 +248,4 @@ if __name__ == "__main__":
     logger.info("Webhook o'rnatildi")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
