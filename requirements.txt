@@ -1,3 +1,2 @@
 Flask
-pyTelegramBotAPI
-gunicorn
+pyTelegramBotAPI==4.22.1
