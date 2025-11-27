@@ -1,18 +1,65 @@
 import os
+import sqlite3
+import threading
+import time
 from flask import Flask, request, jsonify
 import telebot
 from telebot import types
 import logging
+from datetime import datetime
 
-# Logging sozlamalar
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# O'ZINGIZNI TOKENSIZ ALMASHTIRING
 BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
 bot = telebot.TeleBot(BOT_TOKEN)
 
+ADMIN_ID = 2051084228  # Sizning Telegram ID
+
+# ==================== BAZA ====================
+def init_db():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users 
+                 (user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, join_date TEXT)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def add_user(user):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    try:
+        c.execute("INSERT OR IGNORE INTO users VALUES (?, ?, ?, ?)",
+                  (user.id, user.username or "", user.first_name or "", now))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"DB error: {e}")
+    finally:
+        conn.close()
+
+def get_user_count():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+def get_all_users():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM users")
+    users = [row[0] for row in c.fetchall()]
+    conn.close()
+    return users
+
+# ==================== OBUNA TEKSHIRISH ====================
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
     {"name": "2-kanal", "username": "@chsb_original"},
@@ -35,241 +82,169 @@ LINKS = {
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
 
-ADMIN_ID = 2051084228
-
-# ------------------------------ FOYDALANUVCHI BAZASI ------------------------------
-def save_user(user_id):
-    try:
-        with open("users.txt", "r") as f:
-            users = f.read().splitlines()
-    except FileNotFoundError:
-        users = []
-
-    if str(user_id) not in users:
-        users.append(str(user_id))
-        with open("users.txt", "w") as f:
-            f.write("\n".join(users))
-
-# ------------------------------ OBUNA TEKSHIRISH ------------------------------
-def check_subscription_status(user_id):
-    not_subscribed = []
-    for channel in REQUIRED_CHANNELS:
+def is_subscribed(user_id):
+    for ch in REQUIRED_CHANNELS:
         try:
-            member = bot.get_chat_member(chat_id=channel["username"], user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                not_subscribed.append(channel["name"])
+            member = bot.get_chat_member(ch["username"], user_id)
+            if member.status in ["left", "kicked"]:
+                return False
         except:
-            not_subscribed.append(channel["name"])
-    return not_subscribed
-
-def subscription_buttons(not_subscribed=None):
-    markup = types.InlineKeyboardMarkup()
-    channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
-    for channel in channels:
-        markup.add(types.InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}"))
-    markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
-    return markup
-
-def check_user_subscriptions(message_or_call):
-    user_id = message_or_call.from_user.id
-    chat_id = message_or_call.message.chat.id if hasattr(message_or_call, "message") else message_or_call.chat.id
-
-    not_subscribed = check_subscription_status(user_id)
-    if not_subscribed:
-        msg = "❌ Siz quyidagi kanallarga obuna bo‘lmagansiz:\n"
-        msg += "\n".join(f"• {name}" for name in not_subscribed)
-        msg += "\n\nIltimos, obuna bo‘ling va qayta tekshiring."
-        markup = subscription_buttons(not_subscribed)
-
-        if hasattr(message_or_call, "message"):
-            bot.answer_callback_query(message_or_call.id, "Obuna shart!", show_alert=True)
-            bot.edit_message_text(chat_id=chat_id, message_id=message_or_call.message.message_id,
-                                  text=msg, reply_markup=markup)
-        else:
-            bot.send_message(chat_id, msg, reply_markup=markup)
-        return False
+            return False
     return True
 
-# ------------------------------ MENYU TUGMALARI ------------------------------
-def main_menu_markup():
+def sub_buttons():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for ch in REQUIRED_CHANNELS:
+        markup.add(types.InlineKeyboardButton(ch["name"], url=f"https://t.me/{ch['username'][1:]}"))
+    markup.add(types.InlineKeyboardButton("Tekshirish", callback_data="check_subs"))
+    return markup
+
+# ==================== MENYULAR ====================
+def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        types.KeyboardButton("📚 BSB JAVOBLARI"),
-        types.KeyboardButton("❗️ CHSB JAVOBLARI"),
-        types.KeyboardButton("📬 Reklama xizmati")
-    )
+    markup.add("BSB JAVOBLARI", "CHSB JAVOBLARI")
+    markup.add("Reklama xizmati")
     return markup
 
-def sub_menu_markup(data):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    grades = list(range(5, 12))
-    for i in range(0, len(grades), 2):
-        row = []
-        for grade in grades[i:i + 2]:
-            txt = f"{grade}-sinf BSB" if data == "bsb" else f"{grade}-sinf CHSB"
-            row.append(types.KeyboardButton(txt))
-        markup.row(*row)
-    markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
+def grade_menu(typ):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    for i in range(5, 12, 2):
+        markup.row(
+            types.KeyboardButton(f"{i}-sinf {typ}"),
+            types.KeyboardButton(f"{i+1}-sinf {typ}")
+        )
+    markup.add(types.KeyboardButton("Asosiy menyu"))
     return markup
 
-# ------------------------------ START ------------------------------
+# ==================== ADMIN PANEL ====================
+def admin_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add("Statistika", "Xabar yuborish")
+    markup.add("Foydalanuvchilar soni", "Chiqish")
+    return markup
+
+# Broadcast o'zgaruvchilari
+broadcast_message = None
+
+# ==================== HANDLERLAR ====================
 @bot.message_handler(commands=['start'])
-def start_handler(message):
-    user_id = message.from_user.id
-    save_user(user_id)
+def start(message):
+    add_user(message.from_user)
+    text = f"""Assalomu alaykum, {message.from_user.first_name}!
 
-    welcome = f"""Assalomu alaykum {message.from_user.first_name} 👋🏻  
-Botimizga xush kelibsiz 🎊
+BSB va CHSB javoblari – hammasi bir joyda!
 
-BSB & CHSB javoblari, savollar, slaydlar va esselar — hammasi tekin 🎁
+Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling"""
+    bot.send_message(message.chat.id, text, reply_markup=sub_buttons())
 
-Botdan foydalanish uchun kanallarga obuna bo‘ling 👇
-"""
-    bot.send_message(message.chat.id, welcome, reply_markup=subscription_buttons())
-
-# ------------------------------ OBUNANI TEKSHIRISH ------------------------------
 @bot.callback_query_handler(func=lambda call: call.data == "check_subs")
-def check_subscriptions(call):
-    user_id = call.from_user.id
-    not_sub = check_subscription_status(user_id)
-
-    if not_sub:
-        msg = "❌ Quyidagi kanallarga obuna bo‘lmagansiz:\n" + "\n".join(f"• {x}" for x in not_sub)
-        markup = subscription_buttons(not_sub)
-        bot.answer_callback_query(call.id, "Obuna kerak", show_alert=True)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=msg, reply_markup=markup)
+def check_subs(call):
+    if is_subscribed(call.from_user.id):
+        bot.edit_message_text("Obuna tasdiqlandi!\nMenyudan foydalaning", 
+                              call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, "Bosh menyu:", reply_markup=main_menu())
     else:
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                              text="✅ Obuna tasdiqlandi!\nMenyudan foydalanishingiz mumkin 🎉")
-        bot.send_message(call.message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
+        bot.answer_callback_query(call.id, "Hali obuna bo‘lmadingiz!", show_alert=True)
 
-# ------------------------------ BSB / CHSB ------------------------------
-@bot.message_handler(func=lambda m: m.text == "📚 BSB JAVOBLARI")
-def bsb_menu(message):
-    if not check_user_subscriptions(message): return
-    bot.send_message(message.chat.id, "BSB sinfni tanlang:", reply_markup=sub_menu_markup("bsb"))
+# Asosiy menyu
+@bot.message_handler(func=lambda m: m.text in ["BSB JAVOBLARI", "CHSB JAVOBLARI"])
+def select_type(message):
+    if not is_subscribed(message.from_user.id):
+        return bot.send_message(message.chat.id, "Obuna bo‘ling!", reply_markup=sub_buttons())
+    
+    typ = "BSB" if "BSB" in message.text else "CHSB"
+    bot.send_message(message.chat.id, f"{typ} sinfni tanlang:", reply_markup=grade_menu(typ))
 
-@bot.message_handler(func=lambda m: m.text == "❗️ CHSB JAVOBLARI")
-def chsb_menu(message):
-    if not check_user_subscriptions(message): return
-    bot.send_message(message.chat.id, "CHSB sinfni tanlang:", reply_markup=sub_menu_markup("chsb"))
-
-@bot.message_handler(func=lambda m: m.text == "📬 Reklama xizmati")
-def reklama_menu(message):
-    if not check_user_subscriptions(message): return
-    bot.send_message(message.chat.id, "📬 Reklama uchun: @BAR_xn")
-
-@bot.message_handler(func=lambda m: m.text == "🏠 Asosiy menyu")
-def back_to_menu(message):
-    bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
-
-# ------------------------------ Sinf linklari ------------------------------
-@bot.message_handler(func=lambda m: any(x in m.text for x in ["BSB", "CHSB"]))
-def grade_handler(message):
-    if not check_user_subscriptions(message): return
-
+@bot.message_handler(func=lambda m: "sinf" in m.text and ("BSB" in m.text or "CHSB" in m.text))
+def send_link(message):
+    if not is_subscribed(message.from_user.id):
+        return bot.send_message(message.chat.id, "Obuna bo‘ling!", reply_markup=sub_buttons())
+    
     try:
-        grade = message.text.split()[0].replace("-sinf", "")
+        grade = message.text.split("-")[0]
         typ = "bsb" if "BSB" in message.text else "chsb"
         key = f"{typ}_{grade}"
         link = LINKS.get(key)
-
         if link:
-            bot.send_message(message.chat.id, f"Siz tanladingiz: {message.text}\n🔗 Link: {link}")
+            bot.send_message(message.chat.id, f"{message.text}\n\nLink: {link}")
         else:
-            bot.send_message(message.chat.id, "Bu sinf uchun link topilmadi.")
-    except Exception as e:
-        logger.error(e)
+            bot.send_message(message.chat.id, "Bu sinf uchun link yo‘q.")
+    except:
         bot.send_message(message.chat.id, "Xatolik yuz berdi.")
 
-# ------------------------------ ADMIN PANEL ------------------------------
-def admin_panel_markup():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(
-        types.KeyboardButton("📣 Xabar yuborish"),
-        types.KeyboardButton("📊 Statistika")
-    )
-    markup.add(types.KeyboardButton("🔙 Orqaga"))
-    return markup
+@bot.message_handler(func=lambda m: m.text == "Asosiy menyu")
+def back_main(message):
+    bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu())
 
-@bot.message_handler(commands=["admin"])
-def admin_panel(message):
+@bot.message_handler(func=lambda m: m.text == "Reklama xizmati")
+def reklama(message):
+    bot.send_message(message.chat.id, "Reklama uchun: @BAR_xn")
+
+# ==================== ADMIN ====================
+@bot.message_handler(commands=['admin'])
+def admin_panel_cmd(message):
     if message.from_user.id != ADMIN_ID:
-        return bot.send_message(message.chat.id, "❌ Siz admin emassiz.")
-    bot.send_message(message.chat.id, "🔐 Admin panel:", reply_markup=admin_panel_markup())
+        return bot.reply_to(message, "Ruxsat yo‘q!")
+    bot.send_message(message.chat.id, "*Admin panel*", reply_markup=admin_keyboard(), parse_mode="Markdown")
 
-@bot.message_handler(func=lambda m: m.text == "🔙 Orqaga")
-def back_to_main(message):
-    bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
+@bot.message_handler(func=lambda m: m.text == "Chiqish" and m.from_user.id == ADMIN_ID)
+def admin_exit(message):
+    bot.send_message(message.chat.id, "Chiqdingiz.", reply_markup=main_menu())
 
-@bot.message_handler(func=lambda m: m.text == "📊 Statistika")
-def admin_stats(message):
-    if message.from_user.id != ADMIN_ID: return
-    try:
-        with open("users.txt", "r") as f:
-            users = f.read().splitlines()
-    except:
-        users = []
-    bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {len(users)}")
+@bot.message_handler(func=lambda m: m.text in ["Statistika", "Foydalanuvchilar soni"] and m.from_user.id == ADMIN_ID)
+def stats(message):
+    count = get_user_count()
+    bot.reply_to(message, f"Foydalanuvchilar soni: *{count}* ta", parse_mode="Markdown")
 
-# ------------------------------ BROADCAST ------------------------------
-broadcast_mode = {}
+@bot.message_handler(func=lambda m: m.text == "Xabar yuborish" and m.from_user.id == ADMIN_ID)
+def broadcast_start(message):
+    msg = bot.send_message(message.chat.id, "Yubormoqchi bo‘lgan xabaringizni yuboring (matn, rasm, video...)\n\nBekor qilish: /cancel")
+    bot.register_next_step_handler(msg, process_broadcast_message)
 
-@bot.message_handler(func=lambda m: m.text == "📣 Xabar yuborish")
-def start_broadcast(message):
-    if message.from_user.id != ADMIN_ID: return
-    broadcast_mode[message.from_user.id] = True
-    bot.send_message(message.chat.id, "✍️ Yuboriladigan xabarni kiriting.\nMatn, rasm yoki video bo‘lishi mumkin.")
-
-@bot.message_handler(content_types=["text", "photo", "video"])
-def broadcast(message):
-    if message.from_user.id in broadcast_mode and broadcast_mode[message.from_user.id]:
-
+def process_broadcast_message(message):
+    if message.text and message.text == "/cancel":
+        return bot.reply_to(message, "Broadcast bekor qilindi.")
+    
+    users = get_all_users()
+    total = len(users)
+    success = failed = 0
+    
+    status_msg = bot.send_message(message.chat.id, f"Yuborilmoqda... 0/{total}")
+    
+    for i, user_id in enumerate(users):
         try:
-            with open("users.txt", "r") as f:
-                users = f.read().splitlines()
+            bot.copy_message(user_id, message.chat.id, message.message_id)
+            success += 1
         except:
-            users = []
+            failed += 1
+        
+        if (i + 1) % 10 == 0 or i == total - 1:
+            bot.edit_message_text(
+                f"Yuborilmoqda...\nMuvaffaqiyatli: {success}\nXato: {failed}\nUmumiy: {total}",
+                message.chat.id, status_msg.message_id
+            )
+            time.sleep(0.4)  # Telegram limiti
 
-        bot.send_message(message.chat.id, "📤 Yuborilmoqda...")
+    bot.edit_message_text(
+        f"*Broadcast tugadi!*\n\nUmumiy: {total}\nYuborildi: {success}\nXato: {failed}",
+        message.chat.id, status_msg.message_id, parse_mode="Markdown"
+    )
 
-        ok, fail = 0, 0
-
-        for user in users:
-            try:
-                if message.content_type == "text":
-                    bot.send_message(user, message.text)
-                elif message.content_type == "photo":
-                    bot.send_photo(user, message.photo[-1].file_id, caption=message.caption)
-                elif message.content_type == "video":
-                    bot.send_video(user, message.video.file_id, caption=message.caption)
-                ok += 1
-            except:
-                fail += 1
-
-        bot.send_message(message.chat.id, f"📣 Yuborildi!\n✔️ {ok} ta\n❌ {fail} ta")
-        broadcast_mode[message.from_user.id] = False
-
-# ------------------------------ WEBHOOK ------------------------------
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+# ==================== WEBHOOK ====================
+@app.route(f"/{BOT_TOKEN}", methods=['POST'])
 def webhook():
-    update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
     bot.process_new_updates([update])
-    return jsonify({"ok": True})
+    return "OK", 200
 
-def set_webhook():
-    url = f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}"
-    bot.remove_webhook()
-    bot.set_webhook(url=url)
-    logger.info(f"Webhook o‘rnatildi: {url}")
-
-def main():
-    set_webhook()
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Server {port}-portda ishga tushdi")
-    app.run(host="0.0.0.0", port=port)
+@app.route("/")
+def index():
+    return "Bot ishlayapti!"
 
 if __name__ == "__main__":
-    main()
-
+    bot.remove_webhook()
+    time.sleep(2)
+    bot.set_webhook(url=f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}")
+    logger.info("Webhook o'rnatildi")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
