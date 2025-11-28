@@ -16,13 +16,16 @@ app = Flask(__name__)
 BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
 bot = telebot.TeleBot(BOT_TOKEN)
 
+ADMIN_ID = 2051084228
+
 # ---------------- DATABASE ----------------
 def init_db():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS users(
-            user_id INTEGER PRIMARY KEY
+            user_id INTEGER PRIMARY KEY,
+            msg_count INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -31,15 +34,22 @@ def init_db():
 def save_user(user_id):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users(user_id) VALUES(?)", (user_id,))
+    c.execute("INSERT OR IGNORE INTO users(user_id, msg_count) VALUES(?, 0)", (user_id,))
+    conn.commit()
+    conn.close()
+
+def increase_msg_count(user_id):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("UPDATE users SET msg_count = msg_count + 1 WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
 def get_all_users():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("SELECT user_id FROM users")
-    users = [row[0] for row in c.fetchall()]
+    c.execute("SELECT user_id, msg_count FROM users")
+    users = c.fetchall()
     conn.close()
     return users
 # --------------------------------------------------
@@ -68,8 +78,6 @@ LINKS = {
     "chsb_10": "https://www.test-uz.ru/soch_uz.php?klass=10",
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
-
-ADMIN_ID = 2051084228
 
 # Obuna tekshirish
 def check_subscription_status(user_id):
@@ -131,6 +139,7 @@ user_states = {}
 def start_handler(message):
     user_id = message.from_user.id
     save_user(user_id)  # start bosganini saqlash
+    increase_msg_count(user_id)
 
     welcome = f"""Assalomu alaykum {message.from_user.first_name} 👋🏻
 Botimizga xush kelibsiz 🎊
@@ -141,7 +150,11 @@ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling 👇"""
 # Obuna tekshirish
 @bot.callback_query_handler(func=lambda call: call.data == "check_subs")
 def check_subscriptions(call):
-    not_sub = check_subscription_status(call.from_user.id)
+    user_id = call.from_user.id
+    save_user(user_id)
+    increase_msg_count(user_id)
+
+    not_sub = check_subscription_status(user_id)
     if not_sub:
         msg = "❌ Quyidagi kanallarga obuna emassiz:\n" + "\n".join(f"• {x}" for x in not_sub)
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=subscription_buttons(not_sub))
@@ -154,7 +167,10 @@ def check_subscriptions(call):
 # Menyular
 @bot.message_handler(func=lambda m: m.text in ["📚 BSB JAVOBLARI", "❗️ CHSB JAVOBLARI", "📬 Reklama xizmati", "🏠 Asosiy menyu"])
 def menu_handler(message):
-    save_user(message.from_user.id)  # Har qanday foydalanuvchini saqlash
+    user_id = message.from_user.id
+    save_user(user_id)
+    increase_msg_count(user_id)
+
     if message.text == "📚 BSB JAVOBLARI":
         bot.send_message(message.chat.id, "BSB sinfni tanlang:", reply_markup=sub_menu_markup("bsb"))
     elif message.text == "❗️ CHSB JAVOBLARI":
@@ -167,7 +183,10 @@ def menu_handler(message):
 # Sinf tanlash
 @bot.message_handler(func=lambda m: any(f"{i}-sinf" in m.text for i in range(5, 12)))
 def grade_handler(message):
-    save_user(message.from_user.id)  # Har qanday foydalanuvchini saqlash
+    user_id = message.from_user.id
+    save_user(user_id)
+    increase_msg_count(user_id)
+
     try:
         grade = message.text.split("-")[0]
         typ = "bsb" if "BSB" in message.text else "chsb"
@@ -186,6 +205,7 @@ def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         return bot.send_message(message.chat.id, "❌ Siz admin emassiz!")
     save_user(message.from_user.id)
+    increase_msg_count(message.from_user.id)
     bot.send_message(message.chat.id, "🔐 Admin panel", reply_markup=admin_panel_markup())
 
 @bot.message_handler(func=lambda m: m.text == "🔙 Chiqish" and m.from_user.id == ADMIN_ID)
@@ -195,8 +215,14 @@ def admin_exit(message):
 # Statistika
 @bot.message_handler(func=lambda m: m.text == "📊 Statistika" and m.from_user.id == ADMIN_ID)
 def admin_stats(message):
-    total = len(get_all_users())
-    bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {total} ta")
+    users = get_all_users()
+    total = len(users)
+
+    # eng faol 10 foydalanuvchi
+    top_users = sorted(users, key=lambda x: x[1], reverse=True)[:10]
+    top_list = "\n".join([f"{i+1}. {u[0]} — {u[1]} ta xabar" for i, u in enumerate(top_users)]) or "Ma'lumot yo‘q"
+
+    bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {total} ta\n\n🔥 Eng faol foydalanuvchilar:\n{top_list}")
 
 # Hammaga xabar
 @bot.message_handler(func=lambda m: m.text == "📣 Xabar yuborish (Hammaga)" and m.from_user.id == ADMIN_ID)
@@ -212,7 +238,10 @@ def broadcast_one_start(message):
 
 @bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_broadcast(message):
-    save_user(message.from_user.id)  # Har qanday foydalanuvchini saqlash
+    user_id = message.from_user.id
+    save_user(user_id)
+    increase_msg_count(user_id)
+
     if message.from_user.id != ADMIN_ID:
         return
 
@@ -231,7 +260,8 @@ def handle_broadcast(message):
 
     def send_messages():
         if state["action"] == "broadcast_all":
-            users = get_all_users()
+            users_list = get_all_users()
+            users = [uid for uid, _ in users_list]
         else:
             users = [state["target"]]
 
