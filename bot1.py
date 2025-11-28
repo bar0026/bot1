@@ -44,7 +44,6 @@ def get_all_users():
     return users
 # --------------------------------------------------
 
-
 # Majburiy obuna kanallari
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
@@ -131,7 +130,7 @@ user_states = {}
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     user_id = message.from_user.id
-    save_user(user_id)
+    save_user(user_id)  # start bosganini saqlash
 
     welcome = f"""Assalomu alaykum {message.from_user.first_name} 👋🏻
 Botimizga xush kelibsiz 🎊
@@ -155,6 +154,7 @@ def check_subscriptions(call):
 # Menyular
 @bot.message_handler(func=lambda m: m.text in ["📚 BSB JAVOBLARI", "❗️ CHSB JAVOBLARI", "📬 Reklama xizmati", "🏠 Asosiy menyu"])
 def menu_handler(message):
+    save_user(message.from_user.id)  # Har qanday foydalanuvchini saqlash
     if message.text == "📚 BSB JAVOBLARI":
         bot.send_message(message.chat.id, "BSB sinfni tanlang:", reply_markup=sub_menu_markup("bsb"))
     elif message.text == "❗️ CHSB JAVOBLARI":
@@ -167,6 +167,7 @@ def menu_handler(message):
 # Sinf tanlash
 @bot.message_handler(func=lambda m: any(f"{i}-sinf" in m.text for i in range(5, 12)))
 def grade_handler(message):
+    save_user(message.from_user.id)  # Har qanday foydalanuvchini saqlash
     try:
         grade = message.text.split("-")[0]
         typ = "bsb" if "BSB" in message.text else "chsb"
@@ -184,6 +185,7 @@ def grade_handler(message):
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         return bot.send_message(message.chat.id, "❌ Siz admin emassiz!")
+    save_user(message.from_user.id)
     bot.send_message(message.chat.id, "🔐 Admin panel", reply_markup=admin_panel_markup())
 
 @bot.message_handler(func=lambda m: m.text == "🔙 Chiqish" and m.from_user.id == ADMIN_ID)
@@ -210,6 +212,7 @@ def broadcast_one_start(message):
 
 @bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_broadcast(message):
+    save_user(message.from_user.id)  # Har qanday foydalanuvchini saqlash
     if message.from_user.id != ADMIN_ID:
         return
 
