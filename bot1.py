@@ -25,16 +25,18 @@ def init_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS users(
             user_id INTEGER PRIMARY KEY,
+            first_name TEXT,
             msg_count INTEGER DEFAULT 0
         )
     """)
     conn.commit()
     conn.close()
 
-def save_user(user_id):
+def save_user(user_id, first_name="NoName"):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users(user_id, msg_count) VALUES(?, 0)", (user_id,))
+    c.execute("INSERT OR IGNORE INTO users(user_id, first_name, msg_count) VALUES(?, ?, 0)",
+              (user_id, first_name))
     conn.commit()
     conn.close()
 
@@ -48,8 +50,8 @@ def increase_msg_count(user_id):
 def get_all_users():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute("SELECT user_id, msg_count FROM users")
-    users = c.fetchall()
+    c.execute("SELECT user_id, first_name, msg_count FROM users")
+    users = c.fetchall()  # [(id, name, msg_count), ...]
     conn.close()
     return users
 # --------------------------------------------------
@@ -138,7 +140,7 @@ user_states = {}
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     user_id = message.from_user.id
-    save_user(user_id)  # start bosganini saqlash
+    save_user(user_id, message.from_user.first_name)
     increase_msg_count(user_id)
 
     welcome = f"""Assalomu alaykum {message.from_user.first_name} 👋🏻
@@ -151,7 +153,7 @@ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling 👇"""
 @bot.callback_query_handler(func=lambda call: call.data == "check_subs")
 def check_subscriptions(call):
     user_id = call.from_user.id
-    save_user(user_id)
+    save_user(user_id, call.from_user.first_name)
     increase_msg_count(user_id)
 
     not_sub = check_subscription_status(user_id)
@@ -168,7 +170,7 @@ def check_subscriptions(call):
 @bot.message_handler(func=lambda m: m.text in ["📚 BSB JAVOBLARI", "❗️ CHSB JAVOBLARI", "📬 Reklama xizmati", "🏠 Asosiy menyu"])
 def menu_handler(message):
     user_id = message.from_user.id
-    save_user(user_id)
+    save_user(user_id, message.from_user.first_name)
     increase_msg_count(user_id)
 
     if message.text == "📚 BSB JAVOBLARI":
@@ -184,7 +186,7 @@ def menu_handler(message):
 @bot.message_handler(func=lambda m: any(f"{i}-sinf" in m.text for i in range(5, 12)))
 def grade_handler(message):
     user_id = message.from_user.id
-    save_user(user_id)
+    save_user(user_id, message.from_user.first_name)
     increase_msg_count(user_id)
 
     try:
@@ -204,7 +206,7 @@ def grade_handler(message):
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         return bot.send_message(message.chat.id, "❌ Siz admin emassiz!")
-    save_user(message.from_user.id)
+    save_user(message.from_user.id, message.from_user.first_name)
     increase_msg_count(message.from_user.id)
     bot.send_message(message.chat.id, "🔐 Admin panel", reply_markup=admin_panel_markup())
 
@@ -219,8 +221,8 @@ def admin_stats(message):
     total = len(users)
 
     # eng faol 10 foydalanuvchi
-    top_users = sorted(users, key=lambda x: x[1], reverse=True)[:10]
-    top_list = "\n".join([f"{i+1}. {u[0]} — {u[1]} ta xabar" for i, u in enumerate(top_users)]) or "Ma'lumot yo‘q"
+    top_users = sorted(users, key=lambda x: x[2], reverse=True)[:10]
+    top_list = "\n".join([f"{i+1}. {u[1]} — {u[2]} ta xabar" for i, u in enumerate(top_users)]) or "Ma'lumot yo‘q"
 
     bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {total} ta\n\n🔥 Eng faol foydalanuvchilar:\n{top_list}")
 
@@ -239,7 +241,7 @@ def broadcast_one_start(message):
 @bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_broadcast(message):
     user_id = message.from_user.id
-    save_user(user_id)
+    save_user(user_id, message.from_user.first_name)
     increase_msg_count(user_id)
 
     if message.from_user.id != ADMIN_ID:
@@ -261,7 +263,7 @@ def handle_broadcast(message):
     def send_messages():
         if state["action"] == "broadcast_all":
             users_list = get_all_users()
-            users = [uid for uid, _ in users_list]
+            users = [uid for uid, _, _ in users_list]
         else:
             users = [state["target"]]
 
