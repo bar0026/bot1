@@ -59,9 +59,8 @@ def get_all_users():
 # Majburiy obuna kanallari
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
-    {"name": "2-kanal", "username": "@savdolar_org"},
+    {"name": "2-kanal", "username": "@chsb_original"},
     {"name": "3-kanal", "username": "@kulishamiz_keling"},
-    {"name": "4-kanal", "username": "@zikrolami"},
 ]
 
 # Linklar bazasi
@@ -307,4 +306,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
