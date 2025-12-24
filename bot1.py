@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.getenv("TOKEN")
+BOT_TOKEN = os.getenv("8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g")
 bot = telebot.TeleBot(BOT_TOKEN)
 ADMIN_ID = 2051084228
 
@@ -251,3 +251,4 @@ if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url="https://BAR26.pythonanywhere.com/webhook")
     logger.info("Webhook o‘rnatildi!")
+
