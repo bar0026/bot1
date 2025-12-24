@@ -1,69 +1,53 @@
+# bot1.py – to‘liq, PythonAnywhere-ga tayyor
 import os
-import time
-import threading
 import sqlite3
-from flask import Flask, request, jsonify
+import logging
+from flask import Flask, request, abort
 import telebot
 from telebot import types
-import logging
 
-# Logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-BOT_TOKEN = "8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g"
+BOT_TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
-
 ADMIN_ID = 2051084228
 
 # ---------------- DATABASE ----------------
+DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
+
 def init_db():
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users(
-            user_id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            msg_count INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users(
+                user_id INTEGER PRIMARY KEY,
+                first_name TEXT,
+                msg_count INTEGER DEFAULT 0
+            )
+        """)
 
 def save_user(user_id, first_name="NoName"):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users(user_id, first_name, msg_count) VALUES(?, ?, 0)",
-              (user_id, first_name))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT OR IGNORE INTO users(user_id, first_name, msg_count) VALUES(?,?,0)",
+                     (user_id, first_name))
 
 def increase_msg_count(user_id):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("UPDATE users SET msg_count = msg_count + 1 WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET msg_count = msg_count + 1 WHERE user_id = ?", (user_id,))
 
 def get_all_users():
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("SELECT user_id, first_name, msg_count FROM users")
-    users = c.fetchall()  # [(id, name, msg_count), ...]
-    conn.close()
-    return users
-# --------------------------------------------------
+    with sqlite3.connect(DB_PATH) as conn:
+        return conn.execute("SELECT user_id, first_name, msg_count FROM users").fetchall()
 
-# Majburiy obuna kanallari
+# ---------------- CONSTANTS ----------------
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
     {"name": "2-kanal", "username": "@chsb_original"},
     {"name": "3-kanal", "username": "@kulishamiz_keling"},
 ]
 
-# Linklar bazasi
 LINKS = {
     "bsb_5": "https://www.test-uz.ru/sor_uz.php?klass=5",
     "bsb_6": "https://www.test-uz.ru/sor_uz.php?klass=6",
@@ -81,38 +65,26 @@ LINKS = {
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
 
-# Obuna tekshirish
+# ---------------- UTILS ----------------
 def check_subscription_status(user_id):
-    not_subscribed = []
-    for channel in REQUIRED_CHANNELS:
+    not_sub = []
+    for ch in REQUIRED_CHANNELS:
         try:
-            member = bot.get_chat_member(chat_id=channel["username"], user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                not_subscribed.append(channel["name"])
-        except:
-            not_subscribed.append(channel["name"])
-    return not_subscribed
+            status = bot.get_chat_member(chat_id=ch["username"], user_id=user_id).status
+            if status not in ("member", "administrator", "creator"):
+                not_sub.append(ch["name"])
+        except Exception:
+            not_sub.append(ch["name"])
+    return not_sub
 
-def subscription_buttons(not_subscribed=None):
+def subscription_buttons(not_sub=None):
     markup = types.InlineKeyboardMarkup(row_width=1)
-    channels = REQUIRED_CHANNELS if not_subscribed is None else [c for c in REQUIRED_CHANNELS if c['name'] in not_subscribed]
-    for channel in channels:
-        markup.add(types.InlineKeyboardButton(channel['name'], url=f"https://t.me/{channel['username'][1:]}"))
+    channels = REQUIRED_CHANNELS if not_sub is None else [c for c in REQUIRED_CHANNELS if c["name"] in not_sub]
+    for c in channels:
+        markup.add(types.InlineKeyboardButton(c["name"], url=f"https://t.me/{c['username'][1:]}"))
     markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
     return markup
 
-# Admin panel tugmalari
-def admin_panel_markup():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        types.KeyboardButton("📊 Statistika"),
-        types.KeyboardButton("📣 Xabar yuborish (Hammaga)"),
-        types.KeyboardButton("👤 Foydalanuvchiga xabar"),
-        types.KeyboardButton("🔙 Chiqish")
-    )
-    return markup
-
-# Asosiy menyu
 def main_menu_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
@@ -122,57 +94,50 @@ def main_menu_markup():
     )
     return markup
 
-# Sinf tanlash menyusi
-def sub_menu_markup(data):
+def sub_menu_markup(typ):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     for i in range(5, 12, 2):
         row = []
-        for grade in range(i, min(i + 2, 12)):
-            txt = f"{grade}-sinf BSB" if data == "bsb" else f"{grade}-sinf CHSB"
+        for g in range(i, min(i + 2, 12)):
+            txt = f"{g}-sinf BSB" if typ == "bsb" else f"{g}-sinf CHSB"
             row.append(types.KeyboardButton(txt))
         markup.row(*row)
     markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
     return markup
 
-user_states = {}
-
-# START
+# ---------------- HANDLERS ----------------
 @bot.message_handler(commands=['start'])
 def start_handler(message):
-    user_id = message.from_user.id
-    save_user(user_id, message.from_user.first_name)
-    increase_msg_count(user_id)
+    uid = message.from_user.id
+    save_user(uid, message.from_user.first_name)
+    increase_msg_count(uid)
+    bot.send_message(
+        message.chat.id,
+        f"Assalomu alaykum {message.from_user.first_name} 👋🏻\nBotimizga xush kelibsiz 🎊",
+        reply_markup=subscription_buttons()
+    )
 
-    welcome = f"""Assalomu alaykum {message.from_user.first_name} 👋🏻
-Botimizga xush kelibsiz 🎊
-
-Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling 👇"""
-    bot.send_message(message.chat.id, welcome, reply_markup=subscription_buttons())
-
-# Obuna tekshirish
-@bot.callback_query_handler(func=lambda call: call.data == "check_subs")
+@bot.callback_query_handler(func=lambda c: c.data == "check_subs")
 def check_subscriptions(call):
-    user_id = call.from_user.id
-    save_user(user_id, call.from_user.first_name)
-    increase_msg_count(user_id)
-
-    not_sub = check_subscription_status(user_id)
+    uid = call.from_user.id
+    save_user(uid, call.from_user.first_name)
+    increase_msg_count(uid)
+    not_sub = check_subscription_status(uid)
     if not_sub:
         msg = "❌ Quyidagi kanallarga obuna emassiz:\n" + "\n".join(f"• {x}" for x in not_sub)
-        bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=subscription_buttons(not_sub))
+        bot.edit_message_text(msg, call.message.chat.id, call.message.message_id,
+                              reply_markup=subscription_buttons(not_sub))
         bot.answer_callback_query(call.id, "Obuna kerak!", show_alert=True)
     else:
         bot.answer_callback_query(call.id, "Tasdiqlandi!")
         bot.edit_message_text("✅ Obuna tasdiqlandi!", call.message.chat.id, call.message.message_id)
         bot.send_message(call.message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
 
-# Menyular
 @bot.message_handler(func=lambda m: m.text in ["📚 BSB JAVOBLARI", "❗️ CHSB JAVOBLARI", "📬 Reklama xizmati", "🏠 Asosiy menyu"])
 def menu_handler(message):
-    user_id = message.from_user.id
-    save_user(user_id, message.from_user.first_name)
-    increase_msg_count(user_id)
-
+    uid = message.from_user.id
+    save_user(uid, message.from_user.first_name)
+    increase_msg_count(uid)
     if message.text == "📚 BSB JAVOBLARI":
         bot.send_message(message.chat.id, "BSB sinfni tanlang:", reply_markup=sub_menu_markup("bsb"))
     elif message.text == "❗️ CHSB JAVOBLARI":
@@ -182,129 +147,107 @@ def menu_handler(message):
     elif message.text == "🏠 Asosiy menyu":
         bot.send_message(message.chat.id, "Asosiy menyu:", reply_markup=main_menu_markup())
 
-# Sinf tanlash
 @bot.message_handler(func=lambda m: any(f"{i}-sinf" in m.text for i in range(5, 12)))
 def grade_handler(message):
-    user_id = message.from_user.id
-    save_user(user_id, message.from_user.first_name)
-    increase_msg_count(user_id)
-
+    uid = message.from_user.id
+    save_user(uid, message.from_user.first_name)
+    increase_msg_count(uid)
     try:
         grade = message.text.split("-")[0]
         typ = "bsb" if "BSB" in message.text else "chsb"
-        key = f"{typ}_{grade}"
-        link = LINKS.get(key)
+        link = LINKS.get(f"{typ}_{grade}")
         if link:
             bot.send_message(message.chat.id, f"🔗 {message.text}\nLink: {link}", reply_markup=main_menu_markup())
         else:
             bot.send_message(message.chat.id, "Bu sinf uchun link topilmadi.")
-    except:
+    except Exception:
         bot.send_message(message.chat.id, "Xatolik yuz berdi.")
 
-# ADMIN PANEL
+# ---------------- ADMIN ----------------
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         return bot.send_message(message.chat.id, "❌ Siz admin emassiz!")
     save_user(message.from_user.id, message.from_user.first_name)
     increase_msg_count(message.from_user.id)
-    bot.send_message(message.chat.id, "🔐 Admin panel", reply_markup=admin_panel_markup())
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(
+        types.KeyboardButton("📊 Statistika"),
+        types.KeyboardButton("📣 Xabar yuborish (Hammaga)"),
+        types.KeyboardButton("👤 Foydalanuvchiga xabar"),
+        types.KeyboardButton("🔙 Chiqish")
+    )
+    bot.send_message(message.chat.id, "🔐 Admin panel", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🔙 Chiqish" and m.from_user.id == ADMIN_ID)
 def admin_exit(message):
     bot.send_message(message.chat.id, "Admin paneldan chiqdingiz.", reply_markup=main_menu_markup())
 
-# Statistika
 @bot.message_handler(func=lambda m: m.text == "📊 Statistika" and m.from_user.id == ADMIN_ID)
 def admin_stats(message):
     users = get_all_users()
     total = len(users)
+    top = sorted(users, key=lambda x: x[2], reverse=True)[:10]
+    top_txt = "\n".join([f"{i+1}. {u[1]} — {u[2]} ta xabar" for i, u in enumerate(top)]) or "Ma'lumot yo‘q"
+    bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {total} ta\n\n🔥 Eng faol:\n{top_txt}")
 
-    # eng faol 10 foydalanuvchi
-    top_users = sorted(users, key=lambda x: x[2], reverse=True)[:10]
-    top_list = "\n".join([f"{i+1}. {u[1]} — {u[2]} ta xabar" for i, u in enumerate(top_users)]) or "Ma'lumot yo‘q"
+USER_STATES = {}
 
-    bot.send_message(message.chat.id, f"📊 Foydalanuvchilar soni: {total} ta\n\n🔥 Eng faol foydalanuvchilar:\n{top_list}")
-
-# Hammaga xabar
 @bot.message_handler(func=lambda m: m.text == "📣 Xabar yuborish (Hammaga)" and m.from_user.id == ADMIN_ID)
 def broadcast_all_start(message):
     bot.send_message(message.chat.id, "📩 Hammaga yuboriladigan xabarni yuboring.")
-    user_states[message.from_user.id] = {"action": "broadcast_all"}
+    USER_STATES[message.from_user.id] = "broadcast_all"
 
-# Bitta odamga
 @bot.message_handler(func=lambda m: m.text == "👤 Foydalanuvchiga xabar" and m.from_user.id == ADMIN_ID)
 def broadcast_one_start(message):
-    bot.send_message(message.chat.id, "Foydalanuvchi ID sining yuboring:")
-    user_states[message.from_user.id] = {"action": "waiting_id"}
+    bot.send_message(message.chat.id, "Foydalanuvchi ID sini yuboring:")
+    USER_STATES[message.from_user.id] = "waiting_id"
 
 @bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_broadcast(message):
-    user_id = message.from_user.id
-    save_user(user_id, message.from_user.first_name)
-    increase_msg_count(user_id)
-
-    if message.from_user.id != ADMIN_ID:
+    uid = message.from_user.id
+    if uid != ADMIN_ID or uid not in USER_STATES:
         return
-
-    state = user_states.get(message.from_user.id)
-    if not state:
-        return
-
-    if state["action"] == "waiting_id":
+    state = USER_STATES[uid]
+    if state == "waiting_id":
         try:
             target = int(message.text)
-            user_states[message.from_user.id] = {"action": "broadcast_one", "target": target}
-            bot.send_message(message.chat.id, "Endi yuboriladigan xabarni yuboring:")
-        except:
-            bot.send_message(message.chat.id, "Noto‘g‘ri ID. Raqam yozing.")
+            USER_STATES[uid] = ("broadcast_one", target)
+            bot.send_message(uid, "Endi yuboriladigan xabarni yuboring:")
+        except ValueError:
+            bot.send_message(uid, "Noto‘g‘ri ID. Raqam yozing.")
         return
 
-    def send_messages():
-        if state["action"] == "broadcast_all":
-            users_list = get_all_users()
-            users = [uid for uid, _, _ in users_list]
-        else:
-            users = [state["target"]]
+    if state == "broadcast_all":
+        users_list = [u[0] for u in get_all_users()]
+    else:
+        users_list = [state[1]]
 
-        ok = 0
-        for uid in users:
-            try:
-                if message.content_type == "text":
-                    bot.send_message(uid, message.text)
-                elif message.content_type == "photo":
-                    bot.send_photo(uid, message.photo[-1].file_id, caption=message.caption)
-                ok += 1
-            except:
-                pass
-            time.sleep(0.05)
+    ok = 0
+    for usr in users_list:
+        try:
+            if message.content_type == "text":
+                bot.send_message(usr, message.text)
+            elif message.content_type == "photo":
+                bot.send_photo(usr, message.photo[-1].file_id, caption=message.caption)
+            ok += 1
+        except Exception:
+            pass
+    bot.send_message(uid, f"Yuborildi: {ok} ta")
+    USER_STATES.pop(uid, None)
 
-        bot.send_message(message.chat.id, f"Yuborildi: {ok} ta")
-        user_states.pop(message.from_user.id, None)
-
-    threading.Thread(target=send_messages).start()
-
-# Webhook
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+# ---------------- WEBHOOK ----------------
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
-    bot.process_new_updates([update])
-    return jsonify({"status": "ok"})
+    if request.headers.get("content-type") == "application/json":
+        bot.process_new_updates([telebot.types.Update.de_json(request.get_data().decode("utf-8"))])
+        return "!", 200
+    abort(403)
 
-def set_webhook():
-    url = f"https://mytelegrammbottest.onrender.com/{BOT_TOKEN}"
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(url=url)
-    logger.info("Webhook o‘rnatildi!")
-
-def main():
-    init_db()
-    set_webhook()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
+# ---------------- RUN ----------------
 if __name__ == "__main__":
-    main()
-
-
+    init_db()
+    # webhook ni bir marta qoʻlimizda qoʻyamiz
+    bot.remove_webhook()
+    bot.set_webhook(url="https://BAR26.pythonanywhere.com/webhook")
+    logger.info("Webhook o‘rnatildi!")
