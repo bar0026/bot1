@@ -1,21 +1,14 @@
-# bot1.py – to‘liq, PythonAnywhere-ga tayyor
+# bot1.py – polling (webhook-siz)
 import os
 import sqlite3
-import logging
-from flask import Flask, request, abort
 import telebot
 from telebot import types
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-BOT_TOKEN = os.getenv("8346801600:AAGwVSdfvls42KHFtXwbcZhPzBNVEg8rU9g")
+BOT_TOKEN = os.environ.get("TOKEN")      # env dan o‘qiydi
 bot = telebot.TeleBot(BOT_TOKEN)
 ADMIN_ID = 2051084228
 
-# ---------------- DATABASE ----------------
+# ---------- DATABASE ----------
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
 def init_db():
@@ -41,7 +34,7 @@ def get_all_users():
     with sqlite3.connect(DB_PATH) as conn:
         return conn.execute("SELECT user_id, first_name, msg_count FROM users").fetchall()
 
-# ---------------- CONSTANTS ----------------
+# ---------- CONSTANTS ----------
 REQUIRED_CHANNELS = [
     {"name": "1-kanal", "username": "@bsb_chsb_javoblari1"},
     {"name": "2-kanal", "username": "@chsb_original"},
@@ -65,7 +58,7 @@ LINKS = {
     "chsb_11": "https://www.test-uz.ru/soch_uz.php?klass=11",
 }
 
-# ---------------- UTILS ----------------
+# ---------- UTILS ----------
 def check_subscription_status(user_id):
     not_sub = []
     for ch in REQUIRED_CHANNELS:
@@ -105,7 +98,7 @@ def sub_menu_markup(typ):
     markup.add(types.KeyboardButton("🏠 Asosiy menyu"))
     return markup
 
-# ---------------- HANDLERS ----------------
+# ---------- HANDLERS ----------
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     uid = message.from_user.id
@@ -236,19 +229,8 @@ def handle_broadcast(message):
     bot.send_message(uid, f"Yuborildi: {ok} ta")
     USER_STATES.pop(uid, None)
 
-# ---------------- WEBHOOK ----------------
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    if request.headers.get("content-type") == "application/json":
-        bot.process_new_updates([telebot.types.Update.de_json(request.get_data().decode("utf-8"))])
-        return "!", 200
-    abort(403)
-
-# ---------------- RUN ----------------
+# ---------- POLLING START ----------
 if __name__ == "__main__":
     init_db()
-    # webhook ni bir marta qoʻlimizda qoʻyamiz
     bot.remove_webhook()
-    bot.set_webhook(url="https://BAR26.pythonanywhere.com/webhook")
-    logger.info("Webhook o‘rnatildi!")
-
+    bot.infinity_polling(timeout=60, long_polling_timeout=20)
